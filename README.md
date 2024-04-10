@@ -16,4 +16,4 @@ This is a proof-of-concept module. Since I'm not actively using it, I have to re
 
 # License
 
-Licensed under the Unlicense (see README.md for details).
+Licensed under the Unlicense (see LICENSE for details).
