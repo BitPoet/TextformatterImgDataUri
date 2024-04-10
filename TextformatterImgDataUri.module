@@ -1,0 +1,88 @@
+<?php namespace ProcessWire;
+
+/**
+ * Proof-of-concept module for the ProcessWire CMS
+ *
+ * Implements a textformatter for HTML fields that turns regular src URLs to
+ * inline data URIs to avoid separate http requests.
+ *
+ * The default maximum size for images to inline is 16kB.
+ * Feel free to raise this in the module's configuration.
+ *
+ * This code comes without restrictions or warranties.
+ */
+
+class TextformatterImgDataUri extends Textformatter implements Module, ConfigurableModule {
+
+	protected static $defaultDataUriLimit = 16384;
+
+	public static function getModuleInfo() {
+		return array(
+			"title"			=>	"Textformatter Image Data URI",
+			"summary"		=>	"Replace image URIs in HTML body with their encoded data URI to speed up page loads",
+			"version"		=>	"0.0.7",
+		);
+	}
+	
+	public function __construct() {
+		$this->dataUriLimit = self::$defaultDataUriLimit;
+	}
+	
+	public function format(&$str) {
+		$src = preg_replace_callback('/(<img[^>]+(?<!-)src=)(["\'])(.*?)(\\2)([^>]*>)/', function($match) {
+			// Only use files in site/assets/files
+			if(strpos($match[3], $this->config->urls->assets) === 0) {
+				// Translate url to paths
+				$filepath = str_replace($this->config->urls->files, $this->config->paths->files, $match[3]);
+				
+				// If pagefileSecure is active, the path prefix probably needs to be inserted
+				if($this->config->pagefileSecure && !file_exists($filepath) && strpos($filepath, $this->config->paths->files . $this->config->pagefileSecurePathPrefix) !== 0)
+				{
+					$filepath = str_replace($this->config->paths->files, $this->config->paths->files . $this->config->pagefileSecurePathPrefix, $filepath);
+					//$this->log->save('imgdatauri', sprintf(_("Added pagefileSecurePathPrefix to file path %s"), $filepath));
+				}
+				
+				// If the file isn't found, we return the original url
+				if(! file_exists($filepath)) {
+					//$this->log->save('imgdatauri', sprintf(_("File %s not found"), $filepath));
+					return $match[0];
+				}
+				
+				// Only output images inline that are smaller than the value set in the module's configuration
+				$fsize = filesize($filepath);
+				if($fsize >= $this->dataUriLimit) {
+					//$this->log->save('imgdatauri', sprintf(_("File %s too big, %d >= %d"), $filepath, $fsize, $this->dataUriLimit));
+					return $match[0];
+				}
+				
+				// On windows, make sure extension php_fileinfo.dll is loaded
+				$mime = mime_content_type($filepath);
+				$dataUri = "data:$mime;base64," . base64_encode(file_get_contents($filepath));
+				return $match[1] . $match[2] . $dataUri . $match[4] . ' data-orig-src="' . $match[3] . '"' . $match[5];
+			}
+			//$this->log->save('imgdatauri', sprintf(_('Not an img with src: %s'), $match[0]));
+			return $match[0];
+		}, $str);
+		$str = $src;
+	}
+
+
+	public function formatValue(Page $page, Field $field, &$value) {
+		$this->format($value); 
+	}
+
+
+	public function getModuleConfigInputfields() {
+		$wrap = new InputfieldWrapper();
+		
+		$f = $this->modules->get("InputfieldInteger");
+		$f->label = $this->_("Maximum size to convert");
+		$f->attr('name', 'dataUriLimit');
+		$f->attr('value', $this->dataUriLimit);
+		$f->description = $this->_("Images smaller than the value entered here in bytes will included directly in the HTML (base64 encoded data uri) instead of their links. Note that this text formatter only affects images under site/assets/files");
+		$wrap->append($f);
+		
+		return $wrap;
+	}
+
+}
