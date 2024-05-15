@@ -20,7 +20,7 @@ class TextformatterImgDataUri extends Textformatter implements Module, Configura
 		return array(
 			"title"			=>	"Textformatter Image Data URI",
 			"summary"		=>	"Replace image URIs in HTML body with their encoded data URI to speed up page loads",
-			"version"		=>	"0.0.7",
+			"version"		=>	"0.0.8",
 		);
 	}
 	
@@ -29,7 +29,9 @@ class TextformatterImgDataUri extends Textformatter implements Module, Configura
 	}
 	
 	public function format(&$str) {
+		$this->logIfDebug('Running TextformatterImgDataUri');
 		$src = preg_replace_callback('/(<img[^>]+(?<!-)src=)(["\'])(.*?)(\\2)([^>]*>)/', function($match) {
+			$this->logIfDebug(sprintf($this->_('Checking image URL %s against %s'), $match[3], $this->config->urls->assets));
 			// Only use files in site/assets/files
 			if(strpos($match[3], $this->config->urls->assets) === 0) {
 				// Translate url to paths
@@ -39,33 +41,38 @@ class TextformatterImgDataUri extends Textformatter implements Module, Configura
 				if($this->config->pagefileSecure && !file_exists($filepath) && strpos($filepath, $this->config->paths->files . $this->config->pagefileSecurePathPrefix) !== 0)
 				{
 					$filepath = str_replace($this->config->paths->files, $this->config->paths->files . $this->config->pagefileSecurePathPrefix, $filepath);
-					//$this->log->save('imgdatauri', sprintf(_("Added pagefileSecurePathPrefix to file path %s"), $filepath));
+					$this->logIfDebug(sprintf($this->_("Added pagefileSecurePathPrefix to file path %s"), $filepath));
 				}
 				
 				// If the file isn't found, we return the original url
 				if(! file_exists($filepath)) {
-					//$this->log->save('imgdatauri', sprintf(_("File %s not found"), $filepath));
+					$this->logIfDebug(sprintf($this->_("File %s not found"), $filepath));
 					return $match[0];
 				}
 				
 				// Only output images inline that are smaller than the value set in the module's configuration
 				$fsize = filesize($filepath);
 				if($fsize >= $this->dataUriLimit) {
-					//$this->log->save('imgdatauri', sprintf(_("File %s too big, %d >= %d"), $filepath, $fsize, $this->dataUriLimit));
+					$this->logIfDebug(sprintf($this->_("File %s too big, %d >= %d"), $filepath, $fsize, $this->dataUriLimit));
 					return $match[0];
 				}
 				
 				// On windows, make sure extension php_fileinfo.dll is loaded
 				$mime = mime_content_type($filepath);
+				$this->logIfDebug(sprintf($this->_('Replacing image src with data URI for %s'), $filepath));
 				$dataUri = "data:$mime;base64," . base64_encode(file_get_contents($filepath));
 				return $match[1] . $match[2] . $dataUri . $match[4] . ' data-orig-src="' . $match[3] . '"' . $match[5];
 			}
-			//$this->log->save('imgdatauri', sprintf(_('Not an img with src: %s'), $match[0]));
+			$this->logIfDebug(sprintf($this->_('Not an img with src: %s'), $match[0]));
 			return $match[0];
 		}, $str);
 		$str = $src;
 	}
 
+	protected function logIfDebug($line) {
+		if($this->config->debug)
+			$this->log->save('imgdatauri', $line);
+	}
 
 	public function formatValue(Page $page, Field $field, &$value) {
 		$this->format($value); 
